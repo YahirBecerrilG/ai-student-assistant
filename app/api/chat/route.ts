@@ -152,8 +152,15 @@ export async function POST(req: Request) {
             function: {
                 name: "deleteTask",
                 description: `
-                Elimina una tarea específica del usuario actual
-                utilizando su ID.
+                Elimina una tarea específica del usuario actual.
+
+                Si el usuario proporciona directamente el ID de la tarea,
+                utiliza taskId.
+
+                Si el usuario se refiere a una tarea mediante su nombre,
+                materia, descripción o palabras clave, utiliza taskReference.
+
+                No inventes un taskId cuando el usuario no lo haya proporcionado.
                 `,
                 parameters: {
                     type: "object",
@@ -161,10 +168,14 @@ export async function POST(req: Request) {
                         taskId: {
                             type: "number",
                             description:
-                                "El ID de la tarea que se desea eliminar.",
+                                "ID de la tarea que se desea eliminar, si el usuario lo proporciona directamente.",
+                        },
+                        taskReference: {
+                            type: "string",
+                            description:
+                                "Nombre, materia, descripción o palabras clave que permitan localizar la tarea.",
                         },
                     },
-                    required: ["taskId"],
                     additionalProperties: false,
                 },
             },
@@ -237,6 +248,34 @@ export async function POST(req: Request) {
                         },
                     },
                     required: ["taskId"],
+                    additionalProperties: false,
+                },
+                
+            },
+        },
+        {
+            type: "function" as const,
+            function: {
+                name: "searchTasks",
+                description: `
+                Busca tareas del usuario actual que coincidan con un término
+                en el nombre, materia o descripción.
+
+                Utiliza esta herramienta cuando el usuario haga referencia
+                a una tarea sin proporcionar directamente su ID, especialmente
+                cuando necesites localizar una tarea para consultarla,
+                actualizarla o eliminarla.
+                `,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        query: {
+                            type: "string",
+                            description:
+                                "Término o palabras clave utilizadas para localizar la tarea.",
+                        },
+                    },
+                    required: ["query"],
                     additionalProperties: false,
                 },
             },
@@ -325,6 +364,19 @@ export async function POST(req: Request) {
                     toolCall,
                     userId
                 );
+
+            if (
+                typeof toolResult === "object" &&
+                toolResult !== null &&
+                "status" in toolResult &&
+                toolResult.status === "confirmation_required" &&
+                "task" in toolResult &&
+                toolResult.task
+            ) {
+                return Response.json({
+                    message: `Encontré la tarea "${toolResult.task.name}". ¿Quieres eliminarla?`
+                });
+            }
 
             conversationMessages.push({
                 role: "tool",

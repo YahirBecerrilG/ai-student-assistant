@@ -5,6 +5,9 @@ import { getTasks } from "../tasks/getTasks";
 import { getTask } from "../tasks/getTask";
 import { updateTask } from "../tasks/updateTask";
 import { deleteTask } from "../tasks/deleteTask";
+import { searchTasks } from "../tasks/searchTasks";
+import { resolveTaskReference } from "../tasks/resolveTaskReference";
+import { setPendingAction } from "../ai/pendingAction";
 
 export async function handleToolCall(
     toolCall: ChatCompletionMessageToolCall,
@@ -70,16 +73,63 @@ export async function handleToolCall(
 
         } else if (toolCall.function.name === "deleteTask") {
 
-            const task = await deleteTask(
-                userId,
-                toolArguments.taskId
-            );
+            if (toolArguments.taskId !== undefined) {
 
-            toolResult = {
-                success: task !== null,
-                task
-            };
+                const task = await deleteTask(
+                    userId,
+                    toolArguments.taskId
+                );
 
+                toolResult = {
+                    success: task !== null,
+                    task
+                };
+
+            } else if (toolArguments.taskReference !== undefined) {
+
+                const resolution = await resolveTaskReference(
+                    userId,
+                    toolArguments.taskReference
+                );
+
+                if (resolution.status === "not_found") {
+
+                    toolResult = {
+                        success: false,
+                        status: "not_found",
+                        tasks: []
+                    };
+
+                } else if (resolution.status === "ambiguous") {
+
+                    toolResult = {
+                        success: false,
+                        status: "ambiguous",
+                        tasks: resolution.tasks
+                    };
+
+                } else {
+
+                    setPendingAction({
+                        action: "deleteTask",
+                        taskId: resolution.task.id,
+                        userId
+                    });
+
+                    return {
+                        success: false,
+                        status: "confirmation_required",
+                        task: resolution.task
+                    };
+                }
+
+            } else {
+
+                toolResult = {
+                    success: false,
+                    error: "Debes proporcionar un taskId o una referencia de tarea."
+                };
+            }
         } else if (toolCall.function.name === "updateTask") {
 
             const task = await updateTask(
@@ -92,6 +142,18 @@ export async function handleToolCall(
                 task
             };
 
+        } else if (toolCall.function.name === "searchTasks") {
+
+            const tasks = await searchTasks(
+                userId,
+                toolArguments.query
+            );
+
+            toolResult = {
+                success: true,
+                tasks
+            };
+    
         } else {
 
             throw new Error(

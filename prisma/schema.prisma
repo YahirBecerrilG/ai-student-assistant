@@ -12,23 +12,20 @@ model User {
   name      String
   email     String   @unique
   createdAt DateTime @default(now())
-
   tasks     Task[]
 }
 
 model Task {
-  id             Int      @id @default(autoincrement())
-  userId         Int
-
-  name           String
-  category       String
-  priority       String
-  dateText       String?
-  scheduledDate  DateTime?
-  description    String?
-  subject        String?
-  estimatedTime  Int?
-  createdAt      DateTime @default(now())
-
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  name          String
+  category      String
+  priority      String
+  dateText      String?
+  scheduledDate DateTime?
+  description   String?
+  subject       String?
+  estimatedTime Int?
+  createdAt     DateTime  @default(now())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
