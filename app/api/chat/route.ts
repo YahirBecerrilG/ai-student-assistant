@@ -1,6 +1,16 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { handleToolCall } from "@/lib/ai/toolHandler";
+import {
+    getPendingAction,
+    clearPendingAction
+} from "@/lib/ai/pendingAction";
+
+import { deleteTask } from "@/lib/tasks/deleteTask";
+import { resolveTaskReference } from "@/lib/tasks/resolveTaskReference";
+import { updateTask } from "@/lib/tasks/updateTask";
+import { prisma } from "@/lib/prisma";
+import { mapPrismaTaskToTask } from "@/lib/tasks/taskMapper";
 
 const openai = new OpenAI({
     apiKey: process.env.OPENROUTER_API_KEY,
@@ -13,6 +23,142 @@ export async function POST(req: Request) {
     const { message } = body;
 
     const userId = 1; // Temporalmente hasta implementar autenticación
+
+    const pendingAction = await getPendingAction(userId);
+
+    console.log(
+        "PENDING ACTION:",
+        pendingAction
+    );
+
+    if (
+        pendingAction &&
+        pendingAction.userId === userId
+    ) {
+
+        const normalizedMessage = message
+            .trim()
+            .toLowerCase();
+
+        const confirmations = [
+            "sí",
+            "si",
+            "sí, hazlo",
+            "si, hazlo",
+            "correcto",
+            "confirmo",
+            "adelante",
+            "elimínala",
+            "eliminala"
+        ];
+
+        /*
+        * ============================
+        * DELETE TASK
+        * ============================
+        */
+
+        if (
+            pendingAction.action === "deleteTask" &&
+            confirmations.includes(normalizedMessage)
+        ) {
+
+            const deletedTask = await deleteTask(
+                userId,
+                pendingAction.taskId
+            );
+
+            await clearPendingAction(userId);
+
+            if (!deletedTask) {
+                return Response.json({
+                    message:
+                        "No pude encontrar la tarea que estaba pendiente de eliminar."
+                });
+            }
+
+            return Response.json({
+                message:
+                    `Listo. He eliminado la tarea "${deletedTask.name}".`
+            });
+        }
+
+        /*
+        * ============================
+        * UPDATE TASK
+        * ============================
+        */
+
+        if (pendingAction.action === "updateTask") {
+
+            console.log(
+                "UPDATE PENDING MESSAGE:",
+                message
+            );
+
+            const candidateTasksPrisma = await prisma.task.findMany({
+                where: {
+                    id: {
+                        in: pendingAction.candidateTaskIds
+                    },
+                    userId
+                }
+            });
+
+            const candidateTasks = candidateTasksPrisma.map(
+                mapPrismaTaskToTask
+            );
+
+            const resolution = await resolveTaskReference(
+                userId,
+                message,
+                candidateTasks
+            );
+
+            console.log(
+                "UPDATE RESOLUTION:",
+                resolution
+            );
+
+            if (resolution.status === "not_found") {
+
+                return Response.json({
+                    message:
+                        "No pude identificar cuál de las tareas quieres actualizar. Indícame el nombre de la tarea."
+                });
+            }
+
+            if (resolution.status === "ambiguous") {
+
+                return Response.json({
+                    message:
+                        "La referencia sigue siendo ambigua. Por favor, indícame el nombre exacto de la tarea que deseas actualizar."
+                });
+            }
+
+            const updatedTask = await updateTask(
+                userId,
+                {
+                    taskId: resolution.task.id,
+                    ...pendingAction.updates
+                }
+            );
+
+            await clearPendingAction(userId);
+
+            if (!updatedTask) {
+                return Response.json({
+                    message:
+                        "No pude actualizar la tarea seleccionada."
+                });
+            }
+
+            return Response.json({
+                message:
+                    `He actualizado la tarea "${updatedTask.name}" correctamente.`
+            });
+        }
+    }
 
     const tools = [
         {
@@ -152,24 +298,21 @@ export async function POST(req: Request) {
             function: {
                 name: "deleteTask",
                 description: `
-                Elimina una tarea específica del usuario actual.
+                Elimina una tarea del usuario actual.
 
-                Si el usuario proporciona directamente el ID de la tarea,
-                utiliza taskId.
+                Utiliza taskId SOLO cuando el usuario haya proporcionado
+                explícitamente el ID numérico de la tarea.
 
-                Si el usuario se refiere a una tarea mediante su nombre,
+                Si el usuario identifica la tarea mediante su nombre,
                 materia, descripción o palabras clave, utiliza taskReference.
 
-                No inventes un taskId cuando el usuario no lo haya proporcionado.
+                Nunca inventes, deduzcas ni proporciones un taskId que
+                el usuario no haya mencionado explícitamente.
                 `,
                 parameters: {
                     type: "object",
                     properties: {
-                        taskId: {
-                            type: "number",
-                            description:
-                                "ID de la tarea que se desea eliminar, si el usuario lo proporciona directamente.",
-                        },
+
                         taskReference: {
                             type: "string",
                             description:
@@ -188,7 +331,32 @@ export async function POST(req: Request) {
                 description: `
                 Actualiza uno o varios campos de una tarea del usuario actual.
 
-                Solo modifica los campos que el usuario solicite cambiar.
+                Utiliza esta herramienta cuando el usuario quiera modificar
+                una tarea existente.
+
+                Si el usuario proporciona explícitamente un ID numérico,
+                utiliza taskId.
+
+                Si el usuario NO proporciona un ID, pero identifica la tarea
+                por su nombre, materia, descripción o palabras clave,
+                DEBES utilizar taskReference.
+
+                No utilices searchTasks como paso previo para actualizar
+                una tarea. Utiliza directamente updateTask con taskReference.
+
+                Ejemplo:
+
+                Usuario:
+                "Pon en baja la prioridad de mi tarea de HTML"
+
+                Debes llamar:
+
+                {
+                    "taskReference": "HTML",
+                    "priority": "low"
+                }
+
+                Nunca inventes un taskId.
                 `,
                 parameters: {
                     type: "object",
@@ -198,6 +366,13 @@ export async function POST(req: Request) {
                             description:
                                 "El ID de la tarea que se desea actualizar.",
                         },
+
+                         taskReference: {
+                            type: "string",
+                            description:
+                                "Nombre, materia, descripción o palabras clave para localizar la tarea cuando el usuario no proporciona un ID.",
+                        },
+
                         name: {
                             type: "string",
                             description:
@@ -247,7 +422,7 @@ export async function POST(req: Request) {
                             ],
                         },
                     },
-                    required: ["taskId"],
+                    required: [],
                     additionalProperties: false,
                 },
                 
@@ -288,41 +463,68 @@ export async function POST(req: Request) {
         {
             role: "system",
             content: `
-            Eres un asistente académico llamado AI Student Assistant.
+                Eres un asistente académico llamado AI Student Assistant.
 
-            Tu función es ayudar a los estudiantes a organizar
-            y gestionar sus actividades académicas.
+                Tu función es ayudar a los estudiantes a organizar
+                y gestionar sus actividades académicas.
 
-            Cuando el usuario solicite explícitamente agregar, registrar,
-            guardar o apuntar una actividad, utiliza la herramienta createTask.
+                Cuando el usuario solicite explícitamente agregar, registrar,
+                guardar o apuntar una actividad, utiliza la herramienta createTask.
 
-            Las fechas expresadas en lenguaje natural como "hoy",
-            "mañana", "el viernes" o "el próximo lunes" son fechas válidas.
+                Las fechas expresadas en lenguaje natural como "hoy",
+                "mañana", "el viernes" o "el próximo lunes" son fechas válidas.
 
-            No solicites al usuario una fecha absoluta si ya proporcionó
-            una fecha relativa.
+                No solicites al usuario una fecha absoluta si ya proporcionó
+                una fecha relativa.
 
-            No inventes información.
+                No inventes información.
 
-            Si el usuario no proporciona prioridad, utiliza "unknown".
+                Si el usuario no proporciona prioridad, utiliza "unknown".
 
-            Si no proporciona descripción, materia o tiempo estimado,
-            utiliza null.
+                Si no proporciona descripción, materia o tiempo estimado,
+                utiliza null.
 
-            Si el usuario indica que quiere estudiar, aprender, repasar
-            o practicar un tema, utiliza la categoría "study".
+                Si el usuario indica que quiere estudiar, aprender, repasar
+                o practicar un tema, utiliza la categoría "study".
 
-            Si el usuario no proporciona una categoría explícita y no puede
-            inferirse de forma razonable, utiliza "other".
+                Si el usuario no proporciona una categoría explícita y no puede
+                inferirse de forma razonable, utiliza "other".
 
-            Cuando una tarea debe eliminarse o actualizarse y el usuario
-            no proporciona directamente su ID, utiliza las herramientas
-            disponibles para localizar primero la tarea correspondiente.
+                Cuando una tarea debe eliminarse o actualizarse y el usuario
+                no proporciona directamente su ID, primero utiliza searchTasks
+                para localizar la tarea.
 
-            Puedes utilizar varias herramientas en diferentes rondas
-            para completar una solicitud.
+                Cuando el usuario quiera actualizar una tarea y no proporcione
+                directamente su ID, utiliza updateTask proporcionando
+                taskReference.
 
-            Responde de forma clara, concisa y útil.
+                No utilices searchTasks para localizar previamente una tarea
+                que deseas actualizar.
+
+                updateTask se encargará de resolver la referencia y determinar
+                si existe una coincidencia única o si es necesario pedir
+                aclaración al usuario.
+
+                Cuando el usuario quiera eliminar una tarea y no proporcione
+                directamente su ID, utiliza deleteTask proporcionando
+                taskReference.
+
+                No inventes taskIds.
+
+                Si searchTasks no devuelve ninguna tarea, informa al usuario
+                que no fue posible localizarla.
+
+                Nunca inventes un taskId.
+
+                Cuando una operación requiera varias herramientas, ejecuta las
+                herramientas en el orden necesario para completar la solicitud.
+                Utiliza el resultado de una herramienta como entrada para la
+                siguiente cuando sea necesario.
+
+                Puedes utilizar varias herramientas en diferentes rondas
+                para completar una solicitud.
+
+                Responde de forma clara, concisa y útil.
             `,
         },
         {

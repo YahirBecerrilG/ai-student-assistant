@@ -8,11 +8,12 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  createdAt DateTime @default(now())
-  tasks     Task[]
+  id            Int           @id @default(autoincrement())
+  name          String
+  email         String        @unique
+  createdAt     DateTime      @default(now())
+  tasks         Task[]
+  pendingAction PendingAction?
 }
 
 model Task {
@@ -28,4 +29,16 @@ model Task {
   estimatedTime Int?
   createdAt     DateTime  @default(now())
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PendingAction {
+  id               Int      @id @default(autoincrement())
+  userId           Int      @unique
+  action           String
+  taskId           Int?
+  taskReference    String?
+  candidateTaskIds Json?
+  updates          Json?
+  createdAt        DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
