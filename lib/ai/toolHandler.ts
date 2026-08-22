@@ -7,12 +7,7 @@ import { updateTask } from "../tasks/updateTask";
 import { deleteTask } from "../tasks/deleteTask";
 import { searchTasks } from "../tasks/searchTasks";
 import { resolveTaskReference } from "../tasks/resolveTaskReference";
-import { 
-    setPendingAction,
-    getPendingAction
-} from "../ai/pendingAction";
-
-
+import { setPendingAction } from "../ai/pendingAction";
 
 export async function handleToolCall(
     toolCall: ChatCompletionMessageToolCall,
@@ -22,12 +17,6 @@ export async function handleToolCall(
     if (toolCall.type !== "function") {
         throw new Error("El tipo de tool no es compatible.");
     }
-
-    console.log(
-        "TOOL EJECUTADA:",
-        toolCall.function.name,
-        toolCall.function.arguments
-    );
 
     let toolArguments;
 
@@ -41,13 +30,8 @@ export async function handleToolCall(
             error: "Los argumentos de la herramienta no tienen un formato válido."
         };
     }
-    
-    
-    let toolResult;
 
     try {
-
-    
 
         if (toolCall.function.name === "createTask") {
 
@@ -56,38 +40,95 @@ export async function handleToolCall(
                 toolArguments
             );
 
-            toolResult = {
+            return {
                 success: true,
                 task
             };
+        }
 
-        } else if (toolCall.function.name === "getTasks") {
+        if (toolCall.function.name === "getTasks") {
 
             const tasks = await getTasks(userId);
 
-            toolResult = {
+            return {
                 success: true,
                 tasks
             };
+        }
 
-        } else if (toolCall.function.name === "getTask") {
+        if (toolCall.function.name === "getTask") {
 
             const task = await getTask(
                 userId,
                 toolArguments.taskId
             );
 
-            toolResult = {
+            return {
                 success: task !== null,
                 task
             };
+        }
 
-        } else if (toolCall.function.name === "deleteTask") {
+        if (toolCall.function.name === "deleteTask") {
 
-            console.log(
-                "DELETE TOOL ARGUMENTS:",
-                toolArguments
+            if (toolArguments.taskReference === undefined) {
+
+                return {
+                    success: false,
+                    error: "Debes proporcionar una referencia de tarea."
+                };
+            }
+
+            const resolution = await resolveTaskReference(
+                userId,
+                toolArguments.taskReference
             );
+
+            if (resolution.status === "not_found") {
+
+                return {
+                    success: false,
+                    status: "not_found",
+                    tasks: []
+                };
+            }
+
+            if (resolution.status === "ambiguous") {
+
+                return {
+                    success: false,
+                    status: "ambiguous",
+                    tasks: resolution.tasks
+                };
+            }
+
+            await setPendingAction({
+                action: "deleteTask",
+                taskId: resolution.task.id,
+                userId
+            });
+
+            return {
+                success: false,
+                status: "confirmation_required",
+                task: resolution.task
+            };
+        }
+
+        if (toolCall.function.name === "updateTask") {
+
+            if (toolArguments.taskId !== undefined) {
+
+                const task = await updateTask(
+                    userId,
+                    toolArguments
+                );
+
+                return {
+                    success: task !== null,
+                    task
+                };
+            }
 
             if (toolArguments.taskReference !== undefined) {
 
@@ -98,78 +139,14 @@ export async function handleToolCall(
 
                 if (resolution.status === "not_found") {
 
-                    toolResult = {
+                    return {
                         success: false,
                         status: "not_found",
                         tasks: []
-                    };
-
-                } else if (resolution.status === "ambiguous") {
-
-                    toolResult = {
-                        success: false,
-                        status: "ambiguous",
-                        tasks: resolution.tasks
-                    };
-
-                } else {
-
-                    await setPendingAction({
-                        action: "deleteTask",
-                        taskId: resolution.task.id,
-                        userId
-                    });
-
-                    return {
-                        success: false,
-                        status: "confirmation_required",
-                        task: resolution.task
                     };
                 }
 
-            } else {
-
-                toolResult = {
-                    success: false,
-                    error: "Debes proporcionar una referencia de tarea."
-                };
-            }
-
-        } else if (toolCall.function.name === "updateTask") {
-
-            if (toolArguments.taskId !== undefined) {
-
-                const task = await updateTask(
-                    userId,
-                    toolArguments
-                );
-
-                toolResult = {
-                    success: task !== null,
-                    task
-                };
-
-            } else if (toolArguments.taskReference !== undefined) {
-
-                const resolution = await resolveTaskReference(
-                    userId,
-                    toolArguments.taskReference
-                );
-
-                console.log(
-                    "UPDATE RESOLUTION:",
-                    resolution
-                );
-
-                if (resolution.status === "not_found") {
-
-                    toolResult = {
-                        success: false,
-                        status: "not_found",
-                        tasks: []
-                    };
-
-                } else if (resolution.status === "ambiguous") {
+                if (resolution.status === "ambiguous") {
 
                     await setPendingAction({
                         action: "updateTask",
@@ -189,68 +166,60 @@ export async function handleToolCall(
                         userId
                     });
 
-                    console.log(
-                        "UPDATE PENDING ACTION GUARDADA:",
-                        await getPendingAction(userId)
-                    );
-
-                    toolResult = {
+                    return {
                         success: false,
                         status: "ambiguous",
                         tasks: resolution.tasks
                     };
-
-                } else {
-
-                    const task = await updateTask(
-                        userId,
-                        {
-                            ...toolArguments,
-                            taskId: resolution.task.id
-                        }
-                    );
-
-                    toolResult = {
-                        success: task !== null,
-                        task
-                    };
                 }
 
-            } else {
+                const task = await updateTask(
+                    userId,
+                    {
+                        ...toolArguments,
+                        taskId: resolution.task.id
+                    }
+                );
 
-                toolResult = {
-                    success: false,
-                    error: "Debes proporcionar un taskId o una referencia de tarea."
+                return {
+                    success: task !== null,
+                    task
                 };
             }
 
-        } else if (toolCall.function.name === "searchTasks") {
+            return {
+                success: false,
+                error: "Debes proporcionar un taskId o una referencia de tarea."
+            };
+        }
+
+        if (toolCall.function.name === "searchTasks") {
 
             const tasks = await searchTasks(
                 userId,
                 toolArguments.query
             );
 
-            toolResult = {
+            return {
                 success: true,
                 tasks
             };
-    
-        } else {
-
-            throw new Error(
-                `Tool no reconocida: ${toolCall.function.name}`
-            );
         }
+
+        throw new Error(
+            `Tool no reconocida: ${toolCall.function.name}`
+        );
+
     } catch (error) {
-        console.error("okoeyOcurrió un error al ejecutar la operación.:", error);
+
+        console.error(
+            "Ocurrió un error al ejecutar la operación:",
+            error
+        );
 
         return {
             success: false,
-            error: "Ocurrió un error al ejecutar la operacion."
+            error: "Ocurrió un error al ejecutar la operación."
         };
     }
-
-    
-    return toolResult;
 }

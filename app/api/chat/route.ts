@@ -258,8 +258,14 @@ export async function POST(req: Request) {
                 description: `
                 Obtiene todas las tareas del usuario actual.
 
-                Utiliza esta herramienta cuando el usuario solicite
-                consultar, ver, listar o mostrar sus tareas.
+                Utiliza esta herramienta cuando necesites conocer
+                las tareas del usuario para responder una pregunta,
+                realizar comparaciones, determinar prioridades,
+                encontrar fechas, identificar tareas específicas
+                o decidir qué tarea debe modificarse.
+
+                No esperes a que el usuario solicite explícitamente
+                "mostrar" o "listar" tareas.
                 `,
                 parameters: {
                     type: "object",
@@ -521,10 +527,32 @@ export async function POST(req: Request) {
                 Utiliza el resultado de una herramienta como entrada para la
                 siguiente cuando sea necesario.
 
+                Si para responder una pregunta necesitas conocer
+                el estado actual de las tareas del usuario,
+                utiliza las herramientas disponibles para obtenerlas.
+
+                No solicites al usuario información que ya puede
+                obtenerse mediante una herramienta.
+
                 Puedes utilizar varias herramientas en diferentes rondas
                 para completar una solicitud.
 
+                Si el usuario solicita explícitamente realizar una actualización
+                o modificación de una tarea, ejecuta la operación solicitada
+                sin pedir confirmación adicional.
+
+                Las actualizaciones de tareas no requieren confirmación previa.
+
+                Si para determinar qué tarea debe actualizarse necesitas consultar
+                primero las tareas del usuario, utiliza la herramienta correspondiente,
+                analiza su resultado y continúa con la operación solicitada.
+
+                No detengas una cadena de herramientas para preguntar si el usuario
+                quiere continuar cuando la intención original ya es explícita.
+
                 Responde de forma clara, concisa y útil.
+
+                
             `,
         },
         {
@@ -561,6 +589,15 @@ export async function POST(req: Request) {
         // Ejecutamos todas las tools solicitadas
         for (const toolCall of toolCalls) {
 
+            if (toolCall.type === "function") {
+                console.log(
+                    "TOOL CALL:",
+                    toolCall.function.name,
+                    toolCall.function.arguments
+                );
+            }
+            
+            
             const toolResult =
                 await handleToolCall(
                     toolCall,
