@@ -8,12 +8,14 @@ datasource db {
 }
 
 model User {
-  id            Int           @id @default(autoincrement())
-  name          String
-  email         String        @unique
-  createdAt     DateTime      @default(now())
-  tasks         Task[]
-  pendingAction PendingAction?
+  id             Int             @id @default(autoincrement())
+  name           String
+  email          String          @unique
+  createdAt      DateTime        @default(now())
+  tasks          Task[]
+  pendingAction  PendingAction?
+  documentChunks DocumentChunk[]
+  documents      Document[]
 }
 
 model Task {
@@ -40,5 +42,33 @@ model PendingAction {
   candidateTaskIds Json?
   updates          Json?
   createdAt        DateTime @default(now())
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DocumentChunk {
+  id         Int                          @id @default(autoincrement())
+  userId     Int
+  documentId Int
+  content    String
+  metadata   Json?
+  createdAt  DateTime                     @default(now())
+  embedding  Unsupported("vector(1536)")?
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([documentId])
+}
+
+model Document {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  name      String
+  createdAt DateTime @default(now())
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks DocumentChunk[]
+
+  @@index([userId])
 }
