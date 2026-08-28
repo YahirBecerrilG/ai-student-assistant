@@ -44,7 +44,9 @@ async function main() {
     const chunks = await retrieveRelevantChunks(
         1,
         embedding,
-        5
+        {
+            topK: 5
+        }
     );
 
     console.log("CHUNKS RECUPERADOS:");

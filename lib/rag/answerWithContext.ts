@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { createEmbedding } from "./createEmbedding";
 import { retrieveRelevantChunks } from "./retrieveRelevantChunks";
+import { buildContext } from "./buildContext";
 
 const openai = new OpenAI({
     apiKey: process.env.OPENROUTER_API_KEY,
@@ -16,7 +17,10 @@ export async function answerWithContext(
     const chunks = await retrieveRelevantChunks(
         userId,
         queryEmbedding,
-        5
+        {
+            topK: 5,
+            maxDistance: 0.6,
+        }
     );
 
     if (chunks.length === 0) {
@@ -27,9 +31,7 @@ export async function answerWithContext(
         };
     }
 
-    const context = chunks
-        .map((chunk) => chunk.content)
-        .join("\n\n");
+    const context = buildContext(chunks);
 
     const completion = await openai.chat.completions.create({
         model: "google/gemini-2.5-flash",
