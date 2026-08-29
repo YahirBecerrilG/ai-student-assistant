@@ -13,6 +13,7 @@ const chunks: RetrievedChunk[] = [
             page: 3,
         },
         distance: 0.25,
+        similarity: 0.75,
     },
     {
         id: 2,
@@ -25,6 +26,7 @@ const chunks: RetrievedChunk[] = [
             page: 5,
         },
         distance: 0.42,
+        similarity: 0.58,
     },
 ];
 

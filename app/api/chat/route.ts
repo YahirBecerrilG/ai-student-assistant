@@ -12,6 +12,8 @@ import { updateTask } from "@/lib/tasks/updateTask";
 import { prisma } from "@/lib/prisma";
 import { mapPrismaTaskToTask } from "@/lib/tasks/taskMapper";
 
+import { retrieveContext } from "@/lib/rag/retrieveContext";
+
 const openai = new OpenAI({
     apiKey: process.env.OPENROUTER_API_KEY,
     baseURL: "https://openrouter.ai/api/v1",
@@ -23,6 +25,15 @@ export async function POST(req: Request) {
     const { message } = body;
 
     const userId = 1; // Temporalmente hasta implementar autenticación
+
+    const ragContext = await retrieveContext(
+        userId,
+        message,
+        {
+            topK: 5,
+            maxDistance: 0.6,
+        }
+    );
 
     const pendingAction = await getPendingAction(userId);
 
@@ -551,6 +562,22 @@ export async function POST(req: Request) {
                 quiere continuar cuando la intención original ya es explícita.
 
                 Responde de forma clara, concisa y útil.
+
+                Cuando la pregunta del usuario esté relacionada
+                con información académica contenida en documentos,
+                utiliza el contexto proporcionado.
+
+                Utiliza únicamente la información del contexto
+                para responder preguntas documentales.
+
+                Si el contexto no contiene información suficiente,
+                indica que no tienes información suficiente
+                en los documentos disponibles.
+
+                No inventes información.
+
+                CONTEXTO DOCUMENTAL:
+                ${ragContext.context || "No hay contexto documental relevante."}
 
                 
             `,

@@ -7,6 +7,9 @@ export interface RetrievedChunk {
     content: string;
     metadata: unknown;
     distance: number;
+    similarity: number;
+    keywordScore?: number;
+    finalScore?: number;
 }
 
 interface RetrievalOptions {
@@ -41,7 +44,8 @@ export async function retrieveRelevantChunks(
             d.name AS "documentName",
             dc.content,
             dc.metadata,
-            dc.embedding <=> $1::vector AS distance
+            dc.embedding <=> $1::vector AS distance,
+            1 - (dc.embedding <=> $1::vector) AS similarity
         FROM "DocumentChunk" dc
         INNER JOIN "Document" d
             ON d.id = dc."documentId"

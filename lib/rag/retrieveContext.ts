@@ -1,6 +1,8 @@
 import { createEmbedding } from "./createEmbedding";
 import { retrieveRelevantChunks } from "./retrieveRelevantChunks";
+import { rerankChunks } from "./rerankChunks";
 import { buildContext } from "./buildContext";
+import { deduplicateChunks } from "./deduplicateChunks";
 
 export async function retrieveContext(
     userId: number,
@@ -11,18 +13,42 @@ export async function retrieveContext(
         documentId?: number;
     } = {}
 ) {
+    const {
+        topK = 5,
+        maxDistance = 0.6,
+        documentId,
+    } = options;
+
     const embedding = await createEmbedding(question);
 
     const chunks = await retrieveRelevantChunks(
         userId,
         embedding,
-        options
+        {
+            topK: topK * 2,
+            maxDistance,
+            documentId,
+        }
     );
 
-    const context = buildContext(chunks);
+    const rerankedChunks = rerankChunks(
+        chunks,
+        question,
+        topK * 2
+    );
+
+    const deduplicatedChunks =
+        deduplicateChunks(rerankedChunks);
+
+    const finalChunks =
+        deduplicatedChunks.slice(0, topK);
+
+    const context = buildContext(
+        finalChunks
+    );
 
     return {
         context,
-        chunks,
+        chunks: finalChunks,
     };
 }
