@@ -588,6 +588,8 @@ export async function POST(req: Request) {
         },
     ];
 
+    let lastToolResult: unknown = null;
+
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
 
         const completion = await openai.chat.completions.create({
@@ -607,9 +609,25 @@ export async function POST(req: Request) {
 
         // El modelo ya puede responder directamente
         if (!toolCalls || toolCalls.length === 0) {
+            if (assistantMessage.content) {
+                return Response.json({
+                    message: assistantMessage.content,
+                });
+            }
+
+            if (
+                typeof lastToolResult === "object" &&
+                lastToolResult !== null &&
+                "success" in lastToolResult &&
+                lastToolResult.success === true
+            ) {
+                return Response.json({
+                    message: "La operación se realizó correctamente.",
+                });
+            }
 
             return Response.json({
-                message: assistantMessage.content,
+                message: "No pude generar una respuesta para esta solicitud.",
             });
         }
 
@@ -630,6 +648,8 @@ export async function POST(req: Request) {
                     toolCall,
                     userId
                 );
+
+            lastToolResult = toolResult;
 
             if (
                 typeof toolResult === "object" &&
